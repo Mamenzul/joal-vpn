@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+vpn-wg-conf*.txt
+*.conf
+joal-data/torrents/*
+!joal-data/torrents/.gitkeep

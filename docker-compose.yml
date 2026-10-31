@@ -1,0 +1,47 @@
+# JOAL behind a Proton VPN WireGuard tunnel (gluetun built-in protonvpn provider).
+# All settings come from .env (copy .env.example). Run with:  docker compose up -d
+services:
+  vpn:
+    image: docker.io/qmcgaw/gluetun:v3.41.3
+    container_name: joal-vpn
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - VPN_SERVICE_PROVIDER=protonvpn
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - SERVER_COUNTRIES=${SERVER_COUNTRIES}
+      # keeps the UDP flow alive through NAT (Docker Desktop VM, rootless runtimes)
+      - WIREGUARD_PERSISTENT_KEEPALIVE_INTERVAL=15s
+      # Proton blocks Cloudflare (gluetun's default DoT upstream) and resets DNS-over-TLS
+      # on :853, so DoT is off and plain DNS to Quad9 is used *inside* the tunnel instead.
+      - DOT=off
+      - DNS_ADDRESS=9.9.9.9
+      - TZ=${TZ}
+      # let gluetun's firewall answer clients coming from the LAN/host
+      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET}
+      - HEALTH_VPN_DURATION_INITIAL=30s
+    ports:
+      # JOAL WebUI, host-only. Use 0.0.0.0 instead of 127.0.0.1 to reach it from the LAN.
+      - "127.0.0.1:${JOAL_PORT}:${JOAL_PORT}"
+    restart: unless-stopped
+
+  joal:
+    image: docker.io/anthonyraymond/joal:2.1.37
+    container_name: joal
+    # shares the gluetun network namespace: no tunnel, no network at all
+    network_mode: "service:vpn"
+    depends_on:
+      - vpn
+    volumes:
+      # :Z relabels for SELinux hosts (Fedora/RHEL); ignored by Docker Desktop
+      - ./joal-data:/data:Z
+    command:
+      - --joal-conf=/data
+      - --spring.main.web-environment=true
+      - --server.port=${JOAL_PORT}
+      - --joal.ui.path.prefix=${JOAL_PATH_PREFIX}
+      - --joal.ui.secret-token=${JOAL_SECRET_TOKEN}
+    restart: unless-stopped
